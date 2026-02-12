@@ -15,4 +15,4 @@ USER app
 
 EXPOSE 8080
 
-CMD ["fastapi", "run", "main.py", "--host", "0.0.0.0", "--port", "8080", "--app", "app"]
+CMD ["fastapi", "dev", "main.py", "--host", "0.0.0.0", "--port", "8080", "--app", "app"]

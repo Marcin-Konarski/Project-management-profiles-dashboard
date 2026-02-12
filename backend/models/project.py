@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
-from sqlmodel import SQLModel, Field, Relationship
+from sqlmodel import SQLModel, VARCHAR, Column, Field, Relationship
 
 
 if TYPE_CHECKING:
@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 
 class Project(SQLModel, table=True):
     id: UUID = Field(default_factory=uuid4, primary_key=True)
-    name: str
+    name: str = Field(sa_column=Column("name", VARCHAR, unique=True))
     description: str | None = None
     owner_id: UUID | None = Field(foreign_key="user.id", ondelete="SET NULL")
 

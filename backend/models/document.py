@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
-from sqlmodel import SQLModel, Field, Relationship
+from sqlmodel import SQLModel, VARCHAR, Column, Field, Relationship
 
 
 if TYPE_CHECKING:
@@ -9,7 +9,7 @@ if TYPE_CHECKING:
 
 class Document(SQLModel, table=True):
     id: UUID = Field(default_factory=uuid4, primary_key=True)
-    name: str
+    name: str = Field(sa_column=Column("name", VARCHAR, unique=True))
     storage_key: str # TODO
     size: int
 
