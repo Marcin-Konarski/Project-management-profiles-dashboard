@@ -1,11 +1,73 @@
-#
-#* Holds configurations and security settings
+from datetime import datetime, timedelta, timezone
+from typing import Annotated
 
-#* Example code from Medium:
+import jwt
+from jwt.exceptions import InvalidTokenError, ExpiredSignatureError
+from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from pwdlib import PasswordHash
 
-# from passlib.context import CryptContext
+from .config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
+from ..dependencies import SessionDep
+from ..db.utility import get_user_by_username
+from ..schemas.user import TokenData
 
-# pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# def hash_password(password: str):
-#     return pwd_context.hash(password)
+
+password_hash = PasswordHash.recommended()
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+
+
+def verify_password(plain_password, hashed_password) -> bool:
+    return password_hash.verify(plain_password, hashed_password)
+
+
+def get_password_hash(password) -> str:
+    return password_hash.hash(password)
+
+
+def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.now(timezone.utc) + expires_delta
+    else:
+        expire = datetime.now(timezone.utc) + timedelta(minutes=5)
+    to_encode.update({"exp": int(expire.timestamp())})
+
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def authenticate_user(session: SessionDep, username: str, password: str) -> str:
+    user = get_user_by_username(session, username)
+    if not verify_password(password, user.password):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentials.")
+
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(data={"sub": user.username}, expires_delta=access_token_expires)
+    return access_token
+
+
+
+def get_user_and_session(token: Annotated[str, Depends(oauth2_scheme)], session: SessionDep):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username = payload.get("sub")
+        if username is None:
+            raise credentials_exception
+        token_data = TokenData(username=username)
+    except InvalidTokenError: # Invalid Token
+        raise credentials_exception
+    except ExpiredSignatureError: # Expired token
+        raise credentials_exception
+
+    user = get_user_by_username(session, token_data.username)
+    if user is None:
+        raise credentials_exception
+    return user, session # Returning also session so that it can be reused in the endpoint itself (1 db connection instead of 2 + one DI less)
+

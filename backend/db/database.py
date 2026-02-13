@@ -6,5 +6,4 @@ from .. import models # One needs to import models to the memory in order for SQ
 engine = create_engine(config.db_url, echo=True)
 
 def init_db():
-    print("DB INIT!")
     SQLModel.metadata.create_all(engine)

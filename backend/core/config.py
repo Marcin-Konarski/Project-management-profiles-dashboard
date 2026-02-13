@@ -6,6 +6,9 @@ load_dotenv()
 
 SECRET_KEY = os.getenv("SECRET_KEY")
 
+if not SECRET_KEY:
+    raise RuntimeError("SECRET_KEY environment variable is not set")
+
 class Config(BaseSettings):
     app_name: str = "Project management dashboard"
     db_host: str
@@ -20,3 +23,8 @@ class Config(BaseSettings):
 
 
 config = Config()
+
+
+# JWT related:
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60

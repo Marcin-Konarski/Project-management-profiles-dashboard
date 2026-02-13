@@ -5,6 +5,15 @@ from pydantic import BaseModel, SecretStr, Field
 from ..custom_types import Name
 
 
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+
+class TokenData(BaseModel):
+    username: str | None = None
+
+
 class UserBase(BaseModel):
     username: Name
 
@@ -15,6 +24,10 @@ class UserBase(BaseModel):
 
 class UserRequest(UserBase):
     password: Annotated[SecretStr, Field(min_length=8, max_length=50)] # TODO: Deal with hasing passwords in some way
+
+
+class UserAuthRequest(UserRequest):
+    repeat_password: Annotated[SecretStr, Field(min_length=8, max_length=50)]
 
 
 class UserResponse(UserBase):
