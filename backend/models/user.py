@@ -9,9 +9,10 @@ if TYPE_CHECKING:
 
 
 class User(SQLModel, table=True):
+    __tablename__ = "user" # Explicit name is required for alembic to create this table as user is reserved keywork in postgres and it generates conflicts with this table
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     username: str = Field(sa_column=Column("username", VARCHAR, unique=True))
     password: str
 
     # projects: list[Project] = Relationship(back_populates="users", link_model=ProjectUser)
-    projects: list[ProjectUser] = Relationship(back_populates="user")
+    projects: list["ProjectUser"] = Relationship(back_populates="user")

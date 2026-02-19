@@ -14,4 +14,4 @@ class Document(SQLModel, table=True):
     size: int
 
     project_id: UUID = Field(foreign_key="project.id") # If a project is deleted than documents are deleted as well so there is no point in setting `ondelete` here
-    project: Project = Relationship(back_populates="documents")
+    project: "Project" = Relationship(back_populates="documents")

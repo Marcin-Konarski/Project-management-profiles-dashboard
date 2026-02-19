@@ -16,7 +16,7 @@ router = APIRouter()
 
 
 # Create user
-@router.post("/auth/", response_model=UserResponse, status_code=status.HTTP_201_CREATED, tags=["users"])
+@router.post("/auth", response_model=UserResponse, status_code=status.HTTP_201_CREATED, tags=["users"])
 def auth_user(user: Annotated[UserAuthRequest, Body()], session: SessionDep) -> Any:
     if user.password.get_secret_value() != user.repeat_password.get_secret_value():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Passwords do not match.")
@@ -30,9 +30,11 @@ def auth_user(user: Annotated[UserAuthRequest, Body()], session: SessionDep) -> 
     session.refresh(user_db)
     return user_db
 
+# TODO: CONSIDER SENDING THIS JWT TOKEN IN HEADER OR EVEN IN COOKIE!!!
+# TODO: CONSIDER SENDING THIS JWT TOKEN IN HEADER OR EVEN IN COOKIE!!!
 
 # Login into service, validate credentials and return JWT access token
-@router.post("/login/", status_code=status.HTTP_200_OK, tags=["users"])
+@router.post("/login", status_code=status.HTTP_200_OK, tags=["users"])
 def login_user(form_data: Annotated[OAuth2PasswordRequestForm, Depends()], session: SessionDep) -> Any:
     access_token = authenticate_user(session, form_data.username, form_data.password)
     return Token(access_token=access_token, token_type="bearer")

@@ -19,5 +19,5 @@ class ProjectUser(SQLModel, table=True):
     project_id: UUID | None = Field(default=None, foreign_key="project.id", primary_key=True, ondelete="CASCADE")
     role: Role
 
-    user: User = Relationship(back_populates="projects")
-    project: Project = Relationship(back_populates="users")
+    user: "User" = Relationship(back_populates="projects")
+    project: "Project" = Relationship(back_populates="users")

@@ -16,7 +16,7 @@ router = APIRouter()
 # TODO: fix return types
 
 # Create new project
-@router.post("/projects/", response_model=ProjectWithDocumentsResponse, status_code=status.HTTP_201_CREATED, tags=["projects"])
+@router.post("/projects", response_model=ProjectWithDocumentsResponse, status_code=status.HTTP_201_CREATED, tags=["projects"])
 def create_project(project: Annotated[ProjectWIthDocuments, Body()], session_and_user: tuple[User, SessionDep] = Depends(get_user_and_session)) -> Project:
     current_user, session = session_and_user
     project_db = Project(name=project.name, description=project.description, owner_id=current_user.id)
@@ -31,7 +31,7 @@ def create_project(project: Annotated[ProjectWIthDocuments, Body()], session_and
     return project_db
 
 # List all projects that a user has access to
-@router.get("/projects/", status_code=status.HTTP_200_OK, tags=["projects"]) # TODO: right now there is an error when user id is not valid. Fix that
+@router.get("/projects", status_code=status.HTTP_200_OK, tags=["projects"]) # TODO: right now there is an error when user id is not valid. Fix that
 def list_all_projects(session_and_user: tuple[User, SessionDep] = Depends(get_user_and_session)) -> list[Project]:
     current_user, session = session_and_user
     statement = select(Project).join(ProjectUser).where(ProjectUser.user_id == current_user.id) # Select all projects that user's id corresponds to user's id from projectuser table 

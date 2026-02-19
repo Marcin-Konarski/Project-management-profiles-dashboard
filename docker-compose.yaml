@@ -11,6 +11,11 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
     volumes:
       - epampgdata:/var/lib/postgresql/
+    healthcheck: # This is neccessary to avoid race condition when backend container tries to run migrations when postgres container did not initialize fully
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 3s
+      timeout: 5s
+      retries: 15
     restart: unless-stopped
 
   # FastAPI backend
@@ -20,7 +25,8 @@ services:
       dockerfile: Dockerfile
     container_name: epam-backend
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy # This checks the condition of postgres container before running migrations
     ports:
       - "8080:8080"
     env_file:

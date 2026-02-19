@@ -9,10 +9,12 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 
-COPY . .
+COPY --chown=app:app . .
+RUN chmod +x entrypoint.sh
 
 USER app
 
 EXPOSE 8080
 
-CMD ["fastapi", "dev", "main.py", "--host", "0.0.0.0", "--port", "8080", "--app", "app"]
+ENTRYPOINT ["./entrypoint.sh"]
+CMD ["fastapi", "dev", "main.py", "--host", "0.0.0.0", "--port", "8080"]
