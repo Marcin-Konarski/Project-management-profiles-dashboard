@@ -1,11 +1,12 @@
 from uuid import UUID
 from typing import Annotated
-from fastapi import APIRouter, Depends, Query, Body, Path, status
+from fastapi import APIRouter, Depends, Query, Body, Path, status, Response
 from sqlmodel import select
 
 from ..dependencies import SessionDep
 from ..db.utility import commit_or_409, get_or_404, get_user_by_username
-from ..schemas.project import DocumentBase, DocumentResponse, DocumentListResponse, ProjectBase, ProjectInfoResponse, ProjectInfoWithUsersResponse, ProjectsListResponse, ProjectWIthDocuments, ProjectWithDocumentsResponse, UserResponse
+from ..schemas.project import ProjectBase, ProjectInfoResponse, ProjectInfoWithUsersResponse, ProjectsListResponse, ProjectWIthDocuments, ProjectWithDocumentsResponse, UserResponse
+from ..schemas.document import DocumentBase, DocumentRequest, DocumentResponse, DocumentListResponse
 from ..models import Project, ProjectUser, Document, Role, User
 from ..core.security import get_user_and_session
 
@@ -23,7 +24,7 @@ def create_project(project: Annotated[ProjectWIthDocuments, Body()], session_and
     project_user_db = ProjectUser(user_id=current_user.id, project_id=project_db.id, role=Role.OWNER)
 
     if project.documents:
-        documents_db = [Document(name=doc.name, size=doc.size, storage_key=doc.storage_key) for doc in project.documents]
+        documents_db = [Document(name=doc.name, size=doc.size, storage_key=doc.storage_key, project_id=project_db.id) for doc in project.documents]
         project_db.documents = documents_db
 
     session.add(project_db)
@@ -35,7 +36,7 @@ def create_project(project: Annotated[ProjectWIthDocuments, Body()], session_and
     return project_db
 
 # List all projects that a user has access to
-@router.get("/projects", response_model=ProjectsListResponse, status_code=status.HTTP_200_OK, tags=["projects"]) # TODO: right now there is an error when user id is not valid. Fix that
+@router.get("/projects", response_model=ProjectsListResponse, status_code=status.HTTP_200_OK, tags=["projects"])
 def list_all_projects(session_and_user: tuple[User, SessionDep] = Depends(get_user_and_session)):
     current_user, session = session_and_user
 
@@ -55,7 +56,7 @@ def get_project_details(project_id: Annotated[UUID, Path()], session_and_user: t
     return ProjectInfoWithUsersResponse(id=project.id, name=project.name, description=project.description, owner_id=project.owner_id, users=users_list)
 
 # Update projects details
-@router.put("/project/{project_id}/info", response_model=ProjectInfoResponse, status_code=status.HTTP_201_CREATED, tags=["projects"])
+@router.put("/project/{project_id}/info", response_model=ProjectInfoResponse, status_code=status.HTTP_200_OK, tags=["projects"])
 def update_project_details(project_id: Annotated[UUID, Path()], project: Annotated[ProjectBase, Body()], session_and_user: tuple[User, SessionDep] = Depends(get_user_and_session)):
     current_user, session = session_and_user
 
@@ -67,7 +68,7 @@ def update_project_details(project_id: Annotated[UUID, Path()], project: Annotat
     # project_db.description = project.description
 
     session.add(project_db)
-    commit_or_409(session, "Project with that name already exists.")
+    commit_or_409(session, "Project with that name already exists.", extract_details=True)
     session.refresh(project_db)
 
     return project_db
@@ -85,7 +86,7 @@ def get_project_documents(project_id: Annotated[UUID, Path()], session_and_user:
 
 # Upload document/documents for a specific project
 @router.post("/project/{project_id}/documents", response_model=DocumentListResponse, status_code=status.HTTP_201_CREATED, tags=["projects"])
-def upload_documents(project_id: Annotated[UUID, Path()], documents: Annotated[list[DocumentBase], Body()], session_and_user: tuple[User, SessionDep] = Depends(get_user_and_session)):
+def upload_documents(project_id: Annotated[UUID, Path()], documents: Annotated[list[DocumentBase], Body(min_length=1)], session_and_user: tuple[User, SessionDep] = Depends(get_user_and_session)):
     current_user, session = session_and_user
     project = get_or_404(session, Project, project_id, "Project not found.")
 
@@ -99,12 +100,12 @@ def upload_documents(project_id: Annotated[UUID, Path()], documents: Annotated[l
 
 # Download document, if the user has access to the corresponding project
 @router.get("/document/{document_id}", status_code=status.HTTP_200_OK, tags=["projects"])
-def get_project(document_id: Annotated[UUID, Path()]):
+def download_document(document_id: Annotated[UUID, Path()]):
     raise NotImplementedError
     # return
 
 # Update document
-@router.put("/document/{document_id}", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED, tags=["projects"])
+@router.put("/document/{document_id}", response_model=DocumentResponse, status_code=status.HTTP_200_OK, tags=["projects"])
 def update_document(document_id: Annotated[UUID, Path()], document: Annotated[DocumentBase, Body()], session_and_user: tuple[User, SessionDep] = Depends(get_user_and_session)):
     current_user, session = session_and_user
     document_db = get_or_404(session, Document, document_id, "Document not found.")
@@ -138,6 +139,7 @@ def add_user_to_project(project_id: Annotated[UUID, Path()], user: Annotated[str
     current_user, session = session_and_user
 
     clean_username = user.strip().strip('/')
+    get_or_404(session, Project, project_id, "Project not found.") # Verify if project actually exists
     query_user = get_user_by_username(session, clean_username)
 
     project_user_db = ProjectUser(user_id=query_user.id, project_id=project_id, role=Role.USER)

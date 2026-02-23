@@ -3,7 +3,7 @@ from typing import Annotated
 from pydantic import BaseModel, Field
 
 from ..custom_types import Name
-from .document import DocumentBase, DocumentResponse, DocumentListResponse
+from .document import DocumentBase
 from .user import UserResponse
 
 

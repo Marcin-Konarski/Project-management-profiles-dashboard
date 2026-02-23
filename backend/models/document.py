@@ -11,7 +11,7 @@ class Document(SQLModel, table=True):
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     name: str = Field(sa_column=Column("name", VARCHAR, unique=True))
     storage_key: str # TODO
-    size: int
+    size: int # TODO: validate size and storage key inputs!!
 
     project_id: UUID = Field(foreign_key="project.id") # If a project is deleted than documents are deleted as well so there is no point in setting `ondelete` here
     project: "Project" = Relationship(back_populates="documents")
