@@ -1,9 +1,9 @@
 from datetime import datetime, timedelta, timezone
-from typing import Annotated
+from typing import Annotated, Tuple
 
 import jwt
 from jwt.exceptions import InvalidTokenError, ExpiredSignatureError
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from pwdlib import PasswordHash
 
@@ -11,7 +11,7 @@ from .config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
 from ..dependencies import SessionDep
 from ..db.utility import get_user_by_username
 from ..schemas.user import TokenData
-
+from ..models import User
 
 
 password_hash = PasswordHash.recommended()
@@ -49,7 +49,7 @@ def authenticate_user(session: SessionDep, username: str, password: str) -> str:
 
 
 
-def get_user_and_session(token: Annotated[str, Depends(oauth2_scheme)], session: SessionDep):
+def get_user_and_session(token: Annotated[str, Depends(oauth2_scheme)], session: SessionDep) -> Tuple[User, SessionDep]:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials.",

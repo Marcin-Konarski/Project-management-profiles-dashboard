@@ -11,6 +11,11 @@ class DocumentBase(BaseModel):
     storage_key: Annotated[str, Field(min_length=1)] # TODO: Adjust this value to actual AWS key
     size: Annotated[int, Field(gt=0)]
 
+    model_config = {
+        "from_attributes": True
+    }
+
+
 class DocumentRequest(BaseModel):
     documents: list[DocumentBase]
 

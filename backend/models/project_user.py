@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 class Role(Enum):
     OWNER = "Owner"
     USER = "User"
+    NONE = "None"
 
 
 class ProjectUser(SQLModel, table=True):

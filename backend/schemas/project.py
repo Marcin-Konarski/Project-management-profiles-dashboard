@@ -23,12 +23,16 @@ class ProjectInfoResponse(BaseModel):
     }
 
 
+class ProjectInfoWithDocumentsResponse(ProjectInfoResponse):
+    documents: list[DocumentBase]
+
+
 class ProjectInfoWithUsersResponse(ProjectInfoResponse):
     users: list[UserResponse]
 
 
 class ProjectsListResponse(BaseModel):
-    projects: list[ProjectInfoResponse]
+    projects: list[ProjectInfoWithDocumentsResponse]
 
 
 class ProjectWIthDocuments(ProjectBase):
@@ -37,5 +41,4 @@ class ProjectWIthDocuments(ProjectBase):
 
 class ProjectWithDocumentsResponse(ProjectWIthDocuments):
     id: UUID
-    # documents: list[DocumentResponse] = []
 

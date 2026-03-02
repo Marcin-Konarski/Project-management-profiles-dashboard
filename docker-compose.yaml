@@ -2,7 +2,7 @@ services:
   # PostgreSQL database
   postgres:
     image: postgres:18.1-bookworm
-    container_name: epam-postgres
+    container_name: project-postgres
     ports:
       - "5432:5432" #! vulnerability?
     environment:
@@ -10,7 +10,7 @@ services:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
     volumes:
-      - epampgdata:/var/lib/postgresql/
+      - projectpgdata:/var/lib/postgresql/
     healthcheck: # This is neccessary to avoid race condition when backend container tries to run migrations when postgres container did not initialize fully
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
       interval: 3s
@@ -23,7 +23,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: epam-backend
+    container_name: project-backend
     depends_on:
       postgres:
         condition: service_healthy # This checks the condition of postgres container before running migrations
@@ -36,4 +36,4 @@ services:
     restart: unless-stopped
 
 volumes:
-  epampgdata:
+  projectpgdata:

@@ -1,6 +1,6 @@
 from uuid import UUID
 from typing import Annotated
-from fastapi import APIRouter, Depends, Query, Body, Path, status, Response
+from fastapi import APIRouter, Depends, Query, Body, Path, status
 from sqlmodel import select
 
 from ..dependencies import SessionDep
@@ -10,9 +10,11 @@ from ..schemas.document import DocumentBase, DocumentRequest, DocumentResponse, 
 from ..models import Project, ProjectUser, Document, Role, User
 from ..core.security import get_user_and_session
 
-router = APIRouter()
 
-#! Ensure user permissions! So that only valid users can create projects!
+from ..dependencies import get_project_for_user_permissions, get_project_for_owner_permissions, get_document_for_user_permissions, get_document_for_owner_permissions
+
+
+router = APIRouter()
 
 
 # Create new project
@@ -47,9 +49,8 @@ def list_all_projects(session_and_user: tuple[User, SessionDep] = Depends(get_us
 
 # Return project’s details
 @router.get("/project/{project_id}/info", response_model=ProjectInfoWithUsersResponse, status_code=status.HTTP_200_OK, tags=["projects"])
-def get_project_details(project_id: Annotated[UUID, Path()], session_and_user: tuple[User, SessionDep] = Depends(get_user_and_session)) -> ProjectInfoWithUsersResponse:
-    current_user, session = session_and_user
-    project = get_or_404(session, Project, project_id, "Project not found.") # TODO: actually verify the permissions!
+def get_project_details(project_and_session: tuple[Project, SessionDep] = Depends(get_project_for_user_permissions)) -> ProjectInfoWithUsersResponse:
+    project, session = project_and_session # At this point user is authenticated and authorized
 
     users_list = [UserResponse(username=pu.user.username, id=pu.user.id) for pu in project.users]
 
@@ -57,15 +58,11 @@ def get_project_details(project_id: Annotated[UUID, Path()], session_and_user: t
 
 # Update projects details
 @router.put("/project/{project_id}/info", response_model=ProjectInfoResponse, status_code=status.HTTP_200_OK, tags=["projects"])
-def update_project_details(project_id: Annotated[UUID, Path()], project: Annotated[ProjectBase, Body()], session_and_user: tuple[User, SessionDep] = Depends(get_user_and_session)):
-    current_user, session = session_and_user
-
-    project_db = get_or_404(session, Project, project_id, "Project not found.")
+def update_project_details(project: Annotated[ProjectBase, Body()], project_and_session: tuple[Project, SessionDep] = Depends(get_project_for_user_permissions)):
+    project_db, session = project_and_session # At this point user is authenticated and authorized
 
     project_data = project.model_dump(exclude_unset=True)
-    project_db.sqlmodel_update(project_data)
-    # project_db.name = project.name
-    # project_db.description = project.description
+    project_db.sqlmodel_update(project_data) # Update project info with new data
 
     session.add(project_db)
     commit_or_409(session, "Project with that name already exists.", extract_details=True)
@@ -73,22 +70,26 @@ def update_project_details(project_id: Annotated[UUID, Path()], project: Annotat
 
     return project_db
 
+@router.delete("/project/{project_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["projects"])
+def delete_project(project_and_session: tuple[Project, SessionDep] = Depends(get_project_for_owner_permissions)):
+    project, session = project_and_session
+
+    session.delete(project)
+    session.commit()
+
+    return # HTTP_204_NO_CONTENT
+
 # Return all of the project's documents
 @router.get("/project/{project_id}/documents", response_model=DocumentListResponse, status_code=status.HTTP_200_OK, tags=["projects"])
-def get_project_documents(project_id: Annotated[UUID, Path()], session_and_user: tuple[User, SessionDep] = Depends(get_user_and_session)):
-    current_user, session = session_and_user
-    project = get_or_404(session, Project, project_id, "Project not found.") # Ensure the project exists before returning empty list
-
-    # statement = select(Document).where(Document.project_id == project_id)
-    # documents = session.exec(statement).all()
+def get_project_documents(project_and_session: tuple[Project, SessionDep] = Depends(get_project_for_user_permissions)):
+    project, session = project_and_session
 
     return DocumentListResponse(documents=project.documents, count=len(project.documents))
 
 # Upload document/documents for a specific project
 @router.post("/project/{project_id}/documents", response_model=DocumentListResponse, status_code=status.HTTP_201_CREATED, tags=["projects"])
-def upload_documents(project_id: Annotated[UUID, Path()], documents: Annotated[list[DocumentBase], Body(min_length=1)], session_and_user: tuple[User, SessionDep] = Depends(get_user_and_session)):
-    current_user, session = session_and_user
-    project = get_or_404(session, Project, project_id, "Project not found.")
+def upload_documents(documents: Annotated[list[DocumentBase], Body(min_length=1)], project_and_session: tuple[Project, SessionDep] = Depends(get_project_for_user_permissions)):
+    project, session = project_and_session
 
     documents_db = [Document(name=doc.name, size=doc.size, storage_key=doc.storage_key, project_id=project.id) for doc in documents]
 
@@ -106,15 +107,11 @@ def download_document(document_id: Annotated[UUID, Path()]):
 
 # Update document
 @router.put("/document/{document_id}", response_model=DocumentResponse, status_code=status.HTTP_200_OK, tags=["projects"])
-def update_document(document_id: Annotated[UUID, Path()], document: Annotated[DocumentBase, Body()], session_and_user: tuple[User, SessionDep] = Depends(get_user_and_session)):
-    current_user, session = session_and_user
-    document_db = get_or_404(session, Document, document_id, "Document not found.")
+def update_document(document: Annotated[DocumentBase, Body()], document_and_session: tuple[Document, SessionDep] = Depends(get_document_for_user_permissions)):
+    document_db, session = document_and_session
 
     document_data = document.model_dump(exclude_unset=True)
     document_db.sqlmodel_update(document_data)
-    # document_db.name = document.name
-    # document_db.storage_key = document.storage_key
-    # document_db.size = document.size
 
     session.add(document_db)
     commit_or_409(session, "Document with that name already exists.")
@@ -124,10 +121,10 @@ def update_document(document_id: Annotated[UUID, Path()], document: Annotated[Do
 
 # Delete document and remove it from the corresponding project
 @router.delete("/document/{document_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["projects"])
-def delete_document(document_id: Annotated[UUID, Path()], session_and_user: tuple[User, SessionDep] = Depends(get_user_and_session)):
-    current_user, session = session_and_user
-    document_db = get_or_404(session, Document, document_id, "Document not found.")
+def delete_document(document_and_session: tuple[Document, SessionDep] = Depends(get_document_for_user_permissions)):
+    document_db, session = document_and_session # At this point user is authenticated and authorized
 
+    # The check if document exists is performed in the DI get_document_for_user_permissions. Thus one can simply safely delete document from session at this point and commit
     session.delete(document_db)
     session.commit()
 
@@ -135,14 +132,13 @@ def delete_document(document_id: Annotated[UUID, Path()], session_and_user: tupl
 
 # Grant access to the project for a specific user
 @router.post("/project/{project_id}/invite", status_code=status.HTTP_204_NO_CONTENT, tags=["projects"])
-def add_user_to_project(project_id: Annotated[UUID, Path()], user: Annotated[str, Query()], session_and_user: tuple[User, SessionDep] = Depends(get_user_and_session)):
-    current_user, session = session_and_user
+def add_user_to_project(user: Annotated[str, Query()], project_and_session: tuple[Project, SessionDep] = Depends(get_project_for_owner_permissions)):
+    project, session = project_and_session
 
     clean_username = user.strip().strip('/')
-    get_or_404(session, Project, project_id, "Project not found.") # Verify if project actually exists
     query_user = get_user_by_username(session, clean_username)
 
-    project_user_db = ProjectUser(user_id=query_user.id, project_id=project_id, role=Role.USER)
+    project_user_db = ProjectUser(user_id=query_user.id, project_id=project.id, role=Role.USER)
 
     session.add(project_user_db)
     commit_or_409(session, f"User {query_user.username} has already access to this project.")
@@ -151,7 +147,5 @@ def add_user_to_project(project_id: Annotated[UUID, Path()], user: Annotated[str
 
 
 
-
 #! TODO: Add return types so that FastAPI can validate returned data
-#! TODO: in the return body for some responses also add the list of users that have access to the project
 # https://fastapi.tiangolo.com/tutorial/response-model/

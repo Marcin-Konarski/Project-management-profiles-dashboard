@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import MagicMock
 from fastapi.testclient import TestClient
-from fastapi import status
+from fastapi import status, HTTPException
 from psycopg2.errors import UniqueViolation
 from sqlalchemy.exc import IntegrityError
 from uuid import uuid4
@@ -167,7 +167,7 @@ class TestListAllProjects:
 
 class TestGetProjectDetails:
 
-    def test_get_project_details_returns_200(self, authenticated_client: TestClient, mock_session: MagicMock, fake_user: MagicMock, fake_project: Project):
+    def test_get_project_details_returns_200(self, authenticated_client: TestClient, mock_session: MagicMock, fake_user: MagicMock, fake_project: Project, fake_project_user: ProjectUser):
         fake_user_1 = MagicMock() # Create first fake user that has access to the project
         fake_user_1.user.username = "testuser"
         fake_user_1.user.id = fake_user.id
@@ -178,6 +178,8 @@ class TestGetProjectDetails:
 
         fake_project.users = [fake_user_1, fake_user_2] # Assign access to this project for those users
         mock_session.get.return_value = fake_project
+
+        mock_session.exec.return_value.one_or_none.return_value = (fake_project, fake_project_user)
 
         response = authenticated_client.get(f"/project/{fake_project.id}/info")
 
@@ -192,17 +194,19 @@ class TestGetProjectDetails:
         assert project_data["users"][0]["id"] == str(fake_user.id)
         assert project_data["users"][1]["username"] == "otheruser"
         assert project_data["users"][1]["id"] == str(fake_user_2.user.id)
-        mock_session.get.assert_called_once()
+
+        mock_session.exec.assert_called_once()
 
 
     def test_get_project_details_returns_404_when_project_not_found(self, authenticated_client: TestClient, mock_session: MagicMock):
-        mock_session.get.return_value = None
+        mock_session.exec.return_value.one_or_none.return_value = None
 
         response = authenticated_client.get(f"/project/{uuid4()}/info")
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert response.json()["detail"] == "Project not found."
-        mock_session.get.assert_called_once()
+
+        mock_session.exec.assert_called_once()
 
 
     def test_get_project_details_returns_401_when_not_authenticated(self, client: TestClient, mock_session: MagicMock):
@@ -212,12 +216,22 @@ class TestGetProjectDetails:
         mock_session.get.assert_not_called()
 
 
+    def test_get_project_details_returns_404_when_user_has_no_access(self, authenticated_client: TestClient, mock_session: MagicMock, fake_project: Project):
+        mock_session.exec.return_value.one_or_none.return_value = None # If there is no project_user object user has no access to it
+
+        response = authenticated_client.get(f"/project/{fake_project.id}/info")
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.json()["detail"] == "Project not found."
+
+        mock_session.exec.assert_called_once()
+
 
 
 class TestUpdateProjectDetails:
 
-    def test_update_project_details_returns_200(self, authenticated_client: TestClient, mock_session: MagicMock, fake_project: Project):
-        mock_session.get.return_value = fake_project # Create fake object
+    def test_update_project_details_returns_200(self, authenticated_client: TestClient, mock_session: MagicMock, fake_project: Project, fake_project_user: ProjectUser):
+        mock_session.exec.return_value.one_or_none.return_value = (fake_project, fake_project_user) # Create fake object
         update_body = {"name": "Updated Name", "description": "Updated Description"}
 
         response = authenticated_client.put(f"/project/{fake_project.id}/info", json=update_body)
@@ -230,7 +244,7 @@ class TestUpdateProjectDetails:
         assert response.json()["owner_id"] == str(fake_project.owner_id)
 
         # Verify if fake DB operations are correct
-        mock_session.get.assert_called_once()
+        mock_session.exec.assert_called_once()
         mock_session.add.assert_called_once()
         mock_session.commit.assert_called_once()
         mock_session.refresh.assert_called_once()
@@ -243,9 +257,9 @@ class TestUpdateProjectDetails:
         assert updated_project.id == fake_project.id # Id have to match cuz it's the same project
 
 
-    def test_update_project_name_only_returns_200(self, authenticated_client: TestClient, mock_session: MagicMock, fake_project: Project):
+    def test_update_project_name_only_returns_200(self, authenticated_client: TestClient, mock_session: MagicMock, fake_project: Project, fake_project_user: ProjectUser):
         original_description = fake_project.description # Remember original description to check if it didn't change
-        mock_session.get.return_value = fake_project
+        mock_session.exec.return_value.one_or_none.return_value = (fake_project, fake_project_user)
         update_body = {"name": "Updated Name Only"} # No description here
 
         response = authenticated_client.put(f"/project/{fake_project.id}/info", json=update_body)
@@ -259,20 +273,21 @@ class TestUpdateProjectDetails:
 
 
     def test_update_project_details_returns_404_when_project_not_found(self, authenticated_client: TestClient, mock_session: MagicMock):
-        mock_session.get.return_value = None
+        mock_session.exec.return_value.one_or_none.return_value = None # No project found
         update_body = {"name": "Updated Name", "description": "Updated Description"}
 
         response = authenticated_client.put(f"/project/{uuid4()}/info", json=update_body)
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert response.json()["detail"] == "Project not found."
-        mock_session.get.assert_called_once()
+        mock_session.exec.assert_called_once()
         mock_session.add.assert_not_called()
         mock_session.commit.assert_not_called()
 
 
-    def test_update_project_details_returns_409_when_name_already_exists(self, authenticated_client: TestClient, mock_session: MagicMock, fake_project: Project):
-        mock_session.get.return_value = fake_project
+    def test_update_project_details_returns_409_when_name_already_exists(self, authenticated_client: TestClient, mock_session: MagicMock, fake_project: Project, fake_project_user: ProjectUser):
+        mock_session.exec.return_value.one_or_none.return_value = (fake_project, fake_project_user)
+
         fake_unique_violation = MagicMock(spec=UniqueViolation)
         fake_unique_violation.diag.constraint_name = "project_name_key"
         fake_unique_violation.diag.message_detail = f"(name)=({fake_project.name})"
@@ -294,29 +309,92 @@ class TestUpdateProjectDetails:
         response = client.put(f"/project/{fake_project.id}/info", json=update_body)
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
-        mock_session.get.assert_not_called()
+        mock_session.exec.assert_not_called()
         mock_session.add.assert_not_called()
         mock_session.commit.assert_not_called()
 
 
-    def test_update_project_details_returns_422_when_name_is_too_long(self, authenticated_client: TestClient, mock_session: MagicMock, fake_project: Project):
+    def test_update_project_details_returns_404_when_user_has_no_access(self, authenticated_client: TestClient, mock_session: MagicMock, fake_project: Project):
+        mock_session.exec.return_value.one_or_none.return_value = None # User has no access (no ProjectUser record)
+        
+        update_body = {"name": "Updated Name", "description": "Updated Description"}
+
+        response = authenticated_client.put(f"/project/{fake_project.id}/info", json=update_body)
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.json()["detail"] == "Project not found."
+        mock_session.exec.assert_called_once() # Permission check should be called
+        mock_session.add.assert_not_called()
+        mock_session.commit.assert_not_called()
+
+
+    def test_update_project_details_returns_422_when_name_is_too_long(self, authenticated_client: TestClient, mock_session: MagicMock, fake_project: Project, fake_project_user: ProjectUser):
+        mock_session.exec.return_value.one_or_none.return_value = (fake_project, fake_project_user)
         update_body = {"name": "a" * 1000, "description": "Some Description"} # Name way too long
 
         response = authenticated_client.put(f"/project/{fake_project.id}/info", json=update_body)
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        mock_session.get.assert_not_called()
+        mock_session.exec.assert_called_once() # This exec is called in _get_project_user function which is DI. Dependencies should run before pydantic validation 
         mock_session.add.assert_not_called()
         mock_session.commit.assert_not_called()
 
 
 
+class TestDeleteProject:
+
+    def test_delete_project_returns_204_when_user_is_owner(self, authenticated_client: TestClient, mock_session: MagicMock, fake_project: Project, fake_project_user: ProjectUser):
+        mock_session.exec.return_value.one_or_none.return_value = (fake_project, fake_project_user) # Simulate owner permissions
+
+        response = authenticated_client.delete(f"/project/{fake_project.id}")
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        mock_session.exec.assert_called_once()
+        mock_session.delete.assert_called_once()
+        mock_session.commit.assert_called_once()
+
+        # Verify the correct project object was deleted
+        deleted_project = mock_session.delete.call_args_list[0].args[0]
+        assert deleted_project == fake_project
+
+    def test_delete_project_returns_403_when_user_is_not_owner(self, authenticated_client: TestClient, mock_session: MagicMock, fake_project: Project, fake_project_user: ProjectUser):
+        non_owner_project_user = ProjectUser(user_id=fake_project_user.user_id, project_id=fake_project.id, role=Role.USER)
+        mock_session.exec.return_value.one_or_none.return_value = (fake_project, non_owner_project_user) # Simulate user (not owner but project participant) tries to delete project
+
+        response = authenticated_client.delete(f"/project/{fake_project.id}")
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.json()["detail"] == "Not enough permissions."
+        mock_session.exec.assert_called_once()
+        mock_session.delete.assert_not_called()
+        mock_session.commit.assert_not_called()
+
+    def test_delete_project_returns_404_when_project_not_found_or_no_access(self, authenticated_client: TestClient, mock_session: MagicMock):
+        mock_session.exec.return_value.one_or_none.return_value = None # Simulate project not found
+
+        response = authenticated_client.delete(f"/project/{uuid4()}")
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.json()["detail"] == "Project not found."
+        mock_session.exec.assert_called_once()
+        mock_session.delete.assert_not_called()
+        mock_session.commit.assert_not_called()
+
+    def test_delete_project_returns_401_when_not_authenticated(self, client: TestClient, mock_session: MagicMock):
+        response = client.delete(f"/project/{uuid4()}")
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        mock_session.exec.assert_not_called()
+        mock_session.delete.assert_not_called()
+        mock_session.commit.assert_not_called()
+
+
 
 class TestGetAllProjectDocuments:
 
-    def test_get_project_documents_returns_200(self, authenticated_client: TestClient, mock_session: MagicMock, fake_project: Project, fake_document: Document):
+    def test_get_project_documents_returns_200(self, authenticated_client: TestClient, mock_session: MagicMock, fake_project: Project, fake_document: Document, fake_project_user: ProjectUser):
         fake_project.documents = [fake_document]
-        mock_session.get.return_value = fake_project # Create fake project with a document to be returned
+        mock_session.exec.return_value.one_or_none.return_value = (fake_project, fake_project_user) # Create fake project with a document to be returned and mock project_user to simulate permissions
 
         response = authenticated_client.get(f"/project/{fake_project.id}/documents/")
 
@@ -330,48 +408,58 @@ class TestGetAllProjectDocuments:
         assert doc_data.get("size") == fake_document.size
         assert isinstance(doc_data.get("size"), int)
 
-        mock_session.get.assert_called_once()
+        mock_session.exec.assert_called_once()
 
 
-    def test_get_project_documents_returns_200_with_empty_list(self, authenticated_client: TestClient, mock_session: MagicMock, fake_project: Project):
+    def test_get_project_documents_returns_200_with_empty_list(self, authenticated_client: TestClient, mock_session: MagicMock, fake_project: Project, fake_project_user: ProjectUser):
         fake_project.documents = []
-        mock_session.get.return_value = fake_project
+        mock_session.exec.return_value.one_or_none.return_value = (fake_project, fake_project_user)
 
         response = authenticated_client.get(f"/project/{fake_project.id}/documents/")
 
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["documents"] == []
         assert response.json()["count"] == 0
-        mock_session.get.assert_called_once()
+        mock_session.exec.assert_called_once()
 
 
     def test_get_project_documents_returns_404_when_project_not_found(self, authenticated_client: TestClient, mock_session: MagicMock):
-        mock_session.get.return_value = None
+        mock_session.exec.return_value.one_or_none.return_value = None
 
         response = authenticated_client.get(f"/project/{uuid4()}/documents/")
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert response.json()["detail"] == "Project not found."
-        mock_session.get.assert_called_once()
+        mock_session.exec.assert_called_once()
+
+
+    def test_get_project_documents_returns_404_when_user_has_no_access(self, authenticated_client: TestClient, mock_session: MagicMock, fake_project: Project):
+        mock_session.exec.return_value.one_or_none.return_value = None
+
+        response = authenticated_client.get(f"/project/{fake_project.id}/documents/")
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.json()["detail"] == "Project not found."
+        mock_session.exec.assert_called_once()
 
 
     def test_get_project_documents_returns_401_when_not_authenticated(self, client: TestClient, mock_session: MagicMock):
         response = client.get(f"/project/{uuid4()}/documents/")
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
-        mock_session.get.assert_not_called()
+        mock_session.exec.assert_not_called()
 
 
 
 
 class TestUploadDocuments:
 
-    def test_upload_documents_returns_201(self, authenticated_client: TestClient, mock_session: MagicMock, fake_project: Project):
+    def test_upload_documents_returns_201(self, authenticated_client: TestClient, mock_session: MagicMock, fake_project: Project, fake_project_user: ProjectUser):
         fake_doc_1 = Document(id=uuid4(), name="doc1", storage_key="key1", size=5, project_id=fake_project.id)
         fake_doc_2 = Document(id=uuid4(), name="doc2", storage_key="key2", size=10, project_id=fake_project.id)
         fake_doc_3 = Document(id=uuid4(), name="doc3", storage_key="key3", size=15, project_id=fake_project.id)
         fake_project.documents = [fake_doc_1, fake_doc_2, fake_doc_3] # Create fake project with 3 fake documents
-        mock_session.get.return_value = fake_project
+        mock_session.exec.return_value.one_or_none.return_value = (fake_project, fake_project_user)
 
         body = [
             {"name": "doc1", "storage_key": "key1", "size": 5},
@@ -398,20 +486,20 @@ class TestUploadDocuments:
 
 
     def test_upload_document_returns_404_when_project_not_found(self, authenticated_client: TestClient, mock_session: MagicMock):
-        mock_session.get.return_value = None
+        mock_session.exec.return_value.one_or_none.return_value = None
 
         body = [{"name": "doc1", "storage_key": "key", "size": 5}]
         response = authenticated_client.post(f"/project/{uuid4()}/documents", json=body)
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert response.json()["detail"] == "Project not found."
-        mock_session.get.assert_called_once()
+        mock_session.exec.assert_called_once()
         mock_session.add_all.assert_not_called()
         mock_session.commit.assert_not_called()
 
 
-    def test_upload_document_returns_409_when_document_name_already_exists(self, authenticated_client: TestClient, mock_session: MagicMock, fake_project: Project):
-        mock_session.get.return_value = fake_project
+    def test_upload_document_returns_409_when_document_name_already_exists(self, authenticated_client: TestClient, mock_session: MagicMock, fake_project: Project, fake_project_user: ProjectUser):
+        mock_session.exec.return_value.one_or_none.return_value = (fake_project, fake_project_user)
         fake_unique_violation = MagicMock(spec=UniqueViolation)
         fake_unique_violation.diag.constraint_name = "document_name_key"
         fake_unique_violation.diag.message_detail = "(name)=(doc1)"
@@ -433,38 +521,57 @@ class TestUploadDocuments:
         response = client.post(f"/project/{uuid4()}/documents", json=body)
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
-        mock_session.get.assert_not_called()
+        mock_session.exec.assert_not_called()
         mock_session.add_all.assert_not_called()
         mock_session.commit.assert_not_called()
 
 
-    def test_upload_document_returns_422_when_body_is_empty_list(self, authenticated_client: TestClient, mock_session: MagicMock, fake_project: Project):
+    def test_upload_document_returns_404_when_user_has_no_access(self, authenticated_client: TestClient, mock_session: MagicMock, fake_project: Project):
+        mock_session.exec.return_value.one_or_none.return_value = None # Simulate situation when user has no access
+
+        body = [{"name": "doc1", "storage_key": "key", "size": 5}]
+        response = authenticated_client.post(f"/project/{fake_project.id}/documents", json=body)
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.json()["detail"] == "Project not found."
+        mock_session.exec.assert_called_once()
+        mock_session.add_all.assert_not_called()
+        mock_session.commit.assert_not_called()
+
+
+    def test_upload_document_returns_422_when_body_is_empty_list(self, authenticated_client: TestClient, mock_session: MagicMock, fake_project: Project, fake_project_user: ProjectUser):
+        mock_session.exec.return_value.one_or_none.return_value = (fake_project, fake_project_user)
+
         body = []
         response = authenticated_client.post(f"/project/{fake_project.id}/documents", json=body)
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        mock_session.get.assert_not_called()
+        mock_session.exec.assert_called_once() # Exec triggers as dependecies (so permission validation -> object is fetched from db) are handled before pydantic validation
         mock_session.add_all.assert_not_called()
         mock_session.commit.assert_not_called()
 
 
-    def test_upload_document_returns_422_when_size_is_negative(self, authenticated_client: TestClient, mock_session: MagicMock, fake_project: Project):
+    def test_upload_document_returns_422_when_size_is_negative(self, authenticated_client: TestClient, mock_session: MagicMock, fake_project: Project, fake_project_user: ProjectUser):
+        mock_session.exec.return_value.one_or_none.return_value = (fake_project, fake_project_user)
+
         body = [{"name": "doc1", "storage_key": "key", "size": -1}] # Validate negative file size
         response = authenticated_client.post(f"/project/{fake_project.id}/documents", json=body)
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        mock_session.get.assert_not_called()
+        mock_session.exec.assert_called_once() # Exec triggers as dependecies (so permission validation -> object is fetched from db) are handled before pydantic validation
         mock_session.add_all.assert_not_called()
 
 
-    def test_upload_document_returns_422_when_size_is_string(self, authenticated_client: TestClient, mock_session: MagicMock, fake_project: Project):
+    def test_upload_document_returns_422_when_size_is_string(self, authenticated_client: TestClient, mock_session: MagicMock, fake_project: Project, fake_project_user: ProjectUser):
+        mock_session.exec.return_value.one_or_none.return_value = (fake_project, fake_project_user)
+
         # NOTE: following body: body = [{"name": "doc1", "storage_key": "key", "size": "10"}] - with "size": "10" will pass
         # Pydantic validation as Pydantic by default does coerce compatible types so "10" -> 10
         body = [{"name": "doc1", "storage_key": "key", "size": "bb"}] # Validate file size is string
         response = authenticated_client.post(f"/project/{fake_project.id}/documents", json=body)
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        mock_session.get.assert_not_called()
+        mock_session.exec.assert_called_once() # Exec triggers as dependecies (so permission validation -> object is fetched from db) are handled before pydantic validation
         mock_session.add_all.assert_not_called()
 
 
@@ -477,8 +584,8 @@ class TestDownloadDocument:
 
 class TestUpdateDocument:
 
-    def test_update_document_returns_200(self, authenticated_client: TestClient, mock_session: MagicMock, fake_document: Document, fake_document_1_payload):
-        mock_session.get.return_value = fake_document
+    def test_update_document_returns_200(self, authenticated_client: TestClient, mock_session: MagicMock, fake_document: Document, fake_project_user: ProjectUser, fake_document_1_payload):
+        mock_session.exec.return_value.one_or_none.return_value = (fake_document, fake_project_user)
 
         response = authenticated_client.put(f"/document/{fake_document.id}/", json=fake_document_1_payload)
 
@@ -487,7 +594,7 @@ class TestUpdateDocument:
         assert response.json()["storage_key"] == fake_document_1_payload.get("storage_key")
         assert response.json()["size"] == fake_document_1_payload.get("size")
 
-        mock_session.get.assert_called_once()
+        mock_session.exec.assert_called_once()
         mock_session.add.assert_called_once()
         mock_session.commit.assert_called_once()
         mock_session.refresh.assert_called_once()
@@ -502,20 +609,33 @@ class TestUpdateDocument:
         assert updated_doc.project_id == fake_document.project_id # Project_id should not be changed
 
 
-    def test_update_document_returns_404_when_project_not_found(self, authenticated_client: TestClient, mock_session: MagicMock, fake_document_1_payload):
-        mock_session.get.return_value = None
+    def test_update_document_returns_404_when_document_not_found(self, authenticated_client: TestClient, mock_session: MagicMock, fake_document_1_payload):
+        mock_session.exec.return_value.one_or_none.return_value = None
 
         response = authenticated_client.put(f"/document/{uuid4()}/", json=fake_document_1_payload)
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert response.json()["detail"] == "Document not found."
-        mock_session.get.assert_called_once()
+        mock_session.exec.assert_called_once()
         mock_session.add.assert_not_called()
         mock_session.commit.assert_not_called()
 
 
-    def test_update_document_returns_409_when_name_already_exists(self, authenticated_client: TestClient, mock_session: MagicMock, fake_document: Document, fake_document_1_payload):
-        mock_session.get.return_value = fake_document
+    def test_update_document_returns_404_when_user_has_no_access(self, authenticated_client: TestClient, mock_session: MagicMock, fake_document: Document, fake_document_1_payload):
+        mock_session.exec.return_value.one_or_none.return_value = None # Mock permission check to return None (user has no access)
+
+        response = authenticated_client.put(f"/document/{fake_document.id}/", json=fake_document_1_payload)
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.json()["detail"] == "Document not found."
+        mock_session.exec.assert_called_once()
+        mock_session.add.assert_not_called()
+        mock_session.commit.assert_not_called()
+
+
+    def test_update_document_returns_409_when_name_already_exists(self, authenticated_client: TestClient, mock_session: MagicMock, fake_document: Document, fake_project_user: ProjectUser, fake_document_1_payload):
+        mock_session.exec.return_value.one_or_none.return_value = (fake_document, fake_project_user)
+
         fake_unique_violation = MagicMock(spec=UniqueViolation)
         fake_unique_violation.diag.constraint_name = "document_name_key"
         fake_unique_violation.diag.message_detail = f"(name)=({fake_document_1_payload['name']})"
@@ -525,6 +645,7 @@ class TestUpdateDocument:
 
         assert response.status_code == status.HTTP_409_CONFLICT
         assert response.json()["detail"] == "Document with that name already exists."
+        mock_session.exec.assert_called_once()
         mock_session.commit.assert_called_once()
         mock_session.rollback.assert_called_once()
         mock_session.refresh.assert_not_called()
@@ -534,38 +655,44 @@ class TestUpdateDocument:
         response = client.put(f"/document/{fake_document.id}/", json=fake_document_1_payload)
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
-        mock_session.get.assert_not_called()
+        mock_session.exec.assert_not_called()
         mock_session.add.assert_not_called()
         mock_session.commit.assert_not_called()
 
 
-    def test_update_document_returns_422_when_body_is_empty(self, authenticated_client: TestClient, mock_session: MagicMock):
+    def test_update_document_returns_422_when_body_is_empty(self, authenticated_client: TestClient, mock_session: MagicMock, fake_document: Document, fake_project_user: ProjectUser):
+        mock_session.exec.return_value.one_or_none.return_value = (fake_document, fake_project_user)
+
         body = {}
         response = authenticated_client.put(f"/document/{uuid4()}/", json=body)
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        mock_session.get.assert_not_called()
+        mock_session.exec.assert_called_once()
         mock_session.add_all.assert_not_called()
         mock_session.commit.assert_not_called()
 
 
-    def test_update_document_returns_422_when_size_is_negative(self, authenticated_client: TestClient, mock_session: MagicMock):
+    def test_update_document_returns_422_when_size_is_negative(self, authenticated_client: TestClient, mock_session: MagicMock, fake_document: Document, fake_project_user: ProjectUser):
+        mock_session.exec.return_value.one_or_none.return_value = (fake_document, fake_project_user)
+
         body = {"name": "doc1", "storage_key": "key", "size": -1} # Validate negative file size
         response = authenticated_client.put(f"/document/{uuid4()}/", json=body)
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        mock_session.get.assert_not_called()
+        mock_session.exec.assert_called_once()
         mock_session.add_all.assert_not_called()
 
 
-    def test_update_document_returns_422_when_size_is_string(self, authenticated_client: TestClient, mock_session: MagicMock, fake_project: Project):
+    def test_update_document_returns_422_when_size_is_string(self, authenticated_client: TestClient, mock_session: MagicMock, fake_project: Project, fake_document: Document, fake_project_user: ProjectUser):
+        mock_session.exec.return_value.one_or_none.return_value = (fake_document, fake_project_user)
+
         # NOTE: following body: body = [{"name": "doc1", "storage_key": "key", "size": "10"}] - with "size": "10" will pass
         # Pydantic validation as Pydantic by default does coerce compatible types so "10" -> 10
         body = {"name": "doc1", "storage_key": "key", "size": "bb"} # Validate file size is string
-        response = authenticated_client.post(f"/project/{fake_project.id}/documents", json=body)
+        response = authenticated_client.put(f"/document/{fake_project.id}/", json=body)
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        mock_session.get.assert_not_called()
+        mock_session.exec.assert_called_once()
         mock_session.add_all.assert_not_called()
 
 
@@ -573,13 +700,13 @@ class TestUpdateDocument:
 
 class TestDeleteDocument:
 
-    def test_delete_document_returns_200(self, authenticated_client: TestClient, mock_session: MagicMock, fake_document: Document):
-        mock_session.get.return_value = fake_document
+    def test_delete_document_returns_200(self, authenticated_client: TestClient, mock_session: MagicMock, fake_document: Document, fake_project_user: ProjectUser):
+        mock_session.exec.return_value.one_or_none.return_value = (fake_document, fake_project_user)
 
         response = authenticated_client.delete(f"/document/{fake_document.id}/")
 
         assert response.status_code == status.HTTP_204_NO_CONTENT
-        mock_session.get.assert_called_once()
+        mock_session.exec.assert_called_once()
         mock_session.delete.assert_called_once()
         mock_session.commit.assert_called_once()
         mock_session.refresh.assert_not_called()
@@ -590,13 +717,13 @@ class TestDeleteDocument:
 
 
     def test_delete_document_returns_404_when_document_not_found(self, authenticated_client: TestClient, mock_session: MagicMock, fake_document: Document):
-        mock_session.get.return_value = None
+        mock_session.exec.return_value.one_or_none.return_value = None
 
         response = authenticated_client.delete(f"/document/{fake_document.id}/")
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert response.json()["detail"] == "Document not found."
-        mock_session.get.assert_called_once()
+        mock_session.exec.assert_called_once()
         mock_session.delete.assert_not_called()
         mock_session.commit.assert_not_called()
         mock_session.refresh.assert_not_called()
@@ -606,7 +733,7 @@ class TestDeleteDocument:
         response = client.delete(f"/document/{fake_document.id}/")
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
-        mock_session.get.assert_not_called()
+        mock_session.exec.assert_not_called()
         mock_session.delete.assert_not_called()
         mock_session.commit.assert_not_called()
         mock_session.refresh.assert_not_called()
@@ -615,11 +742,11 @@ class TestDeleteDocument:
 
 class TestAddUserToProject:
 
-    def test_add_user_to_project_returns_204(self, authenticated_client: TestClient, mock_session: MagicMock, fake_user: MagicMock, fake_project: Project):
-        mock_session.exec.return_value.one_or_none.return_value = fake_user
-        mock_session.get.return_value = fake_project 
+    def test_add_user_to_project_returns_204(self, authenticated_client: TestClient, mock_session: MagicMock, fake_project: Project, fake_project_user: ProjectUser):
+        invited_user = User(id=uuid4(), username="inviteduser", password="aaaaaaaa")
+        mock_session.exec.return_value.one_or_none.side_effect = [(fake_project, fake_project_user), invited_user]
 
-        response = authenticated_client.post(f"/project/{fake_project.id}/invite?user={fake_user.username}")
+        response = authenticated_client.post(f"/project/{fake_project.id}/invite?user={invited_user.username}")
 
         assert response.status_code == status.HTTP_204_NO_CONTENT
         mock_session.add.assert_called_once()
@@ -628,25 +755,25 @@ class TestAddUserToProject:
         # Verify correct ProjectUser object was created correctly
         added_project_user = mock_session.add.call_args_list[0].args[0]
         assert isinstance(added_project_user, ProjectUser) # Validate instance
-        assert added_project_user.user_id == fake_user.id # Validate if new user id
+        assert added_project_user.user_id == invited_user.id # Validate if new user id
         assert added_project_user.project_id == fake_project.id # Validate project id
         assert added_project_user.role == Role.USER # Validate role permission
 
 
     def test_add_user_to_project_returns_404_when_project_not_found(self, authenticated_client: TestClient, mock_session: MagicMock, fake_user: User):
-        mock_session.exec.return_value.one_or_none.return_value = fake_user # User found
-        mock_session.get.return_value = None # Project not found
+        mock_session.exec.return_value.one_or_none.return_value = None # Project not found or no access
 
         response = authenticated_client.post(f"/project/{uuid4()}/invite?user={fake_user.username}") # Randon project
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert response.json()["detail"] == "Project not found."
+        mock_session.exec.assert_called_once()
         mock_session.add.assert_not_called()
         mock_session.commit.assert_not_called()
 
 
-    def test_add_user_to_project_returns_404_when_user_not_found(self, authenticated_client: TestClient, mock_session: MagicMock, fake_project: Project):
-        mock_session.exec.return_value.one_or_none.return_value = None # User not found
+    def test_add_user_to_project_returns_404_when_user_not_found(self, authenticated_client: TestClient, mock_session: MagicMock, fake_project: Project, fake_project_user: ProjectUser):
+        mock_session.exec.return_value.one_or_none.side_effect = [(fake_project, fake_project_user), None] # User not found
 
         response = authenticated_client.post(f"/project/{fake_project.id}/invite?user=nonexistent")
 
@@ -656,15 +783,31 @@ class TestAddUserToProject:
         mock_session.commit.assert_not_called()
 
 
-    def test_add_user_to_project_returns_409_when_user_already_has_access(self, authenticated_client: TestClient, mock_session: MagicMock, fake_user: MagicMock, fake_project: Project):
-        mock_session.exec.return_value.one_or_none.return_value = fake_user
-        mock_session.get.return_value = fake_project
-        mock_session.commit.side_effect = IntegrityError("duplicate", {}, MagicMock(spec=UniqueViolation))
+    def test_add_user_to_project_returns_403_when_user_is_not_owner(self, authenticated_client: TestClient, mock_session: MagicMock, fake_project: Project, fake_project_user: ProjectUser):
+        non_owner_project_user = ProjectUser(user_id=fake_project_user.user_id, project_id=fake_project.id, role=Role.USER) # Permission check with non-owner role
+        mock_session.exec.return_value.one_or_none.return_value = (fake_project, non_owner_project_user)
 
-        response = authenticated_client.post(f"/project/{fake_project.id}/invite?user={fake_user.username}")
+        response = authenticated_client.post(f"/project/{fake_project.id}/invite?user=someuser")
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.json()["detail"] == "Not enough permissions."
+        mock_session.exec.assert_called_once()
+        mock_session.add.assert_not_called()
+        mock_session.commit.assert_not_called()
+
+
+    def test_add_user_to_project_returns_409_when_user_already_has_access(self, authenticated_client: TestClient, mock_session: MagicMock, fake_project: Project, fake_project_user: ProjectUser):
+        invited_user = User(id=uuid4(), username="inviteduser", password="aaaaaaaa")
+        mock_session.exec.return_value.one_or_none.side_effect = [(fake_project, fake_project_user), invited_user]
+
+        # Simulate duplicate constraint violation
+        fake_unique_violation = MagicMock(spec=UniqueViolation)
+        mock_session.commit.side_effect = IntegrityError("duplicate", {}, fake_unique_violation)
+
+        response = authenticated_client.post(f"/project/{fake_project.id}/invite?user={invited_user.username}")
 
         assert response.status_code == status.HTTP_409_CONFLICT
-        assert response.json()["detail"] == f"User {fake_user.username} has already access to this project."
+        assert response.json()["detail"] == f"User {invited_user.username} has already access to this project."
         mock_session.add.assert_called_once()
         mock_session.commit.assert_called_once()
         mock_session.rollback.assert_called_once()
