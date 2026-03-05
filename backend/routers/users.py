@@ -1,77 +1,53 @@
-from typing import Annotated, Any
-from fastapi import APIRouter, HTTPException, Depends, Body, status
-from fastapi.security import OAuth2PasswordRequestForm
+from fastapi import APIRouter, HTTPException, status
+from sqlalchemy.exc import IntegrityError
 
 from ..dependencies import SessionDep
-from ..db.utility import commit_or_409
-from ..core.security import get_password_hash, authenticate_user, get_user_and_session
-from ..schemas.user import UserRequest, UserAuthRequest, UserResponse, Token, TokenData
 from ..models.user import User
+from ..auth import get_password_hash, verify_password, create_access_token
+from ..db.utility import get_user_by_username
+from ..schemas.users import SignupRequest, LoginRequest, AuthResponse, TokenData
 
 
 router = APIRouter()
 
-# TODO: Unify endpoints reqest data!!
-# TODO: /auth/ takes params in body and /login/ takes params from OAuth2. Decide which one to use and stick to one
+
+@router.post("/signup", status_code=status.HTTP_201_CREATED, tags=["users"])
+def signup(body: SignupRequest, session: SessionDep) -> AuthResponse:
+    # create user entry
+    user = User(username=body.username, password=get_password_hash(body.password))
+
+    # insert user entry
+    session.add(user)
+    try:
+        # try committing (can fail because username must be unique)
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Username already exists.",
+        )
+    # refresh user object with actual db data
+    session.refresh(user)
+
+    access_token = create_access_token(TokenData(user_id=str(user.id)))
+
+    return AuthResponse(access_token=access_token, username=user.username)
 
 
-# Create user
-@router.post("/auth", response_model=UserResponse, status_code=status.HTTP_201_CREATED, tags=["users"])
-def auth_user(user: Annotated[UserAuthRequest, Body()], session: SessionDep) -> Any:
-    if user.password.get_secret_value() != user.repeat_password.get_secret_value():
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Passwords do not match.")
+@router.post("/login", status_code=status.HTTP_200_OK, tags=["users"])
+def login(body: LoginRequest, session: SessionDep) -> AuthResponse:
+    # find user by username (raises 404 if not found)
+    user = get_user_by_username(session, body.username)
 
-    hashed_password = get_password_hash(user.password.get_secret_value())
-    user_db = User(username=user.username, password=hashed_password)
-    session.add(user_db)
+    # verify password
+    if not verify_password(body.password, user.password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid username or password.",
+        )
 
-    commit_or_409(session=session, error_message="Username already exists.")
+    # generate jwt token
+    access_token = create_access_token(TokenData(user_id=str(user.id)))
 
-    session.refresh(user_db)
-    return user_db
-
-# TODO: CONSIDER SENDING THIS JWT TOKEN IN HEADER OR EVEN IN COOKIE!!!
-# TODO: CONSIDER SENDING THIS JWT TOKEN IN HEADER OR EVEN IN COOKIE!!!
-
-# Login into service, validate credentials and return JWT access token
-# @router.post("/login", status_code=status.HTTP_200_OK, tags=["users"])
-# def login_user(form_data: Annotated[OAuth2PasswordRequestForm, Depends()], session: SessionDep) -> Any:
-#     access_token = authenticate_user(session, form_data.username, form_data.password)
-#     return Token(access_token=access_token, token_type="bearer")
-
-@router.post("/login/", response_model=Token, status_code=status.HTTP_200_OK, tags=["users"])
-def login_user(user: Annotated[UserRequest, Body()], session: SessionDep) -> Any:
-    access_token = authenticate_user(session, user.username, user.password.get_secret_value())
-    return Token(access_token=access_token, token_type="bearer")
-
-# Get informations about currently logged in user
-@router.get("/me/", response_model=UserResponse, status_code=status.HTTP_200_OK, tags=["users"])
-def get_user_info(session_and_user: tuple[User, SessionDep] = Depends(get_user_and_session)) -> Any:
-    current_user, session = session_and_user
-    return current_user
-
-
-
-
-
-# # Logout from service
-# @router.post("/logout/", status_code=status.HTTP_200_OK, tags=["users"])
-# def logout_user():
-#     raise NotImplementedError
-#     # return
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#! TODO: Add return types so that FastAPI can validate returned data
+    return AuthResponse(access_token=access_token, username=user.username)
