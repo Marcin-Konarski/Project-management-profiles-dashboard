@@ -6,7 +6,7 @@ from sqlmodel import select
 from sqlalchemy.exc import IntegrityError
 from psycopg2.errors import UniqueViolation
 
-from ..dependencies import SessionDep
+from .session import SessionDep
 from ..models import User
 
 def _parse_postgres_duplicate_key(error: IntegrityError) -> tuple[str | None, str | None]:
