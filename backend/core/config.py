@@ -17,6 +17,13 @@ class Config(BaseSettings):
     db_user: str
     db_password: str
     db_name: str
+    aws_access_key_id: str  # Validate variables types
+    aws_secret_access_key: str
+    aws_default_region: str = "us-east-1"
+    s3_bucket_name: str
+    max_file_size: int = 104857600  # 100 MB as MiB
+    max_docs: int = 50
+    max_projects: int = 10
 
     @property
     def db_url(self) -> str:
@@ -26,6 +33,7 @@ class Config(BaseSettings):
 config = Config()
 
 
+# TODO: ADD THIS TO CONFIG!
 # JWT related:
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60

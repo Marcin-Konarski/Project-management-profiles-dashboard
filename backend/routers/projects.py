@@ -15,17 +15,26 @@ from ..schemas.project import (
 )
 from ..schemas.document import (
     DocumentBase,
-    DocumentRequest,
     DocumentResponse,
+    DocumentResponseWithURLs,
     DocumentListResponse,
+    PresignedUrlResponse,
 )
 from ..schemas.user import MemberResponse
-from ..models import Project, ProjectUser, Document, Role, User
+from ..models import Project, ProjectUser, Document, Role, User, DocumentStatus
 from ..core.security import get_user_and_session
 from ..dependencies import (
     get_project_for_user_permissions,
     get_project_for_owner_permissions,
     get_document_for_user_permissions,
+)
+from ..core.config import config
+from ..aws_utility.s3_buckets import (
+    create_presigned_url_post_operation,
+    create_presigned_url_get_operation,
+    create_presigned_url_put_operation,
+    delete_object,
+    delete_objects_by_prefix,
 )
 
 
@@ -41,6 +50,15 @@ def create_project(
     session_and_user: tuple[User, SessionDep] = Depends(get_user_and_session),
 ) -> Project:
     current_user, session = session_and_user
+
+    owned_count = session.exec(
+        select(Project).where(Project.owner_id == current_user.id)
+    ).all()
+    if len(owned_count) >= config.max_projects:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Project limit reached. Maximum allowed: {config.max_projects}.",
+        )
 
     project_db = Project(
         name=project.name, description=project.description, owner_id=current_user.id
@@ -144,6 +162,8 @@ def delete_project(
     ),
 ):
     project, session = project_and_session
+
+    delete_objects_by_prefix(config.s3_bucket_name, f"{project.id}/")
 
     session.delete(project)
     session.commit()
@@ -266,38 +286,47 @@ def get_project_documents(
     )
 
 
-# Upload document(s) for a specific project
+# Upload a document for a specific project
 @router.post(
     "/projects/{project_id}/documents",
-    response_model=DocumentListResponse,
+    response_model=DocumentResponseWithURLs,
     status_code=status.HTTP_201_CREATED,
 )
-def upload_documents(
-    documents: Annotated[list[DocumentBase], Body(min_length=1)],
+def upload_document(
+    document: Annotated[DocumentBase, Body()],
     project_and_session: tuple[Project, SessionDep] = Depends(
         get_project_for_user_permissions
     ),
 ):
     project, session = project_and_session
 
-    documents_db = [
-        Document(
-            name=doc.name,
-            size=doc.size,
-            storage_key=doc.storage_key,
-            project_id=project.id,
+    if len(project.documents) >= config.max_docs:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Document limit reached. Maximum allowed per project: {config.max_docs}.",
         )
-        for doc in documents
-    ]
 
-    session.add_all(documents_db)
+    document_db = Document(
+        name=document.name, project_id=project.id, status=DocumentStatus.PENDING
+    )
+
+    session.add(document_db)
     commit_or_409(
         session, "Document with that name already exists.", extract_details=True
     )
-    session.refresh(project)
+    session.refresh(document_db)
 
-    return DocumentListResponse(
-        documents=project.documents, count=len(project.documents)
+    object_key = f"{project.id}/{document_db.id}"
+    url = create_presigned_url_post_operation(
+        bucket_name=config.s3_bucket_name, object_name=object_key
+    )
+
+    return DocumentResponseWithURLs(
+        id=document_db.id,
+        name=document_db.name,
+        status=document_db.status,
+        created_at=document_db.created_at,
+        presigned_url=url,
     )
 
 
@@ -317,6 +346,28 @@ def get_document(
     return document
 
 
+# Get/download a specific document content
+@router.get(
+    "/projects/{project_id}/documents/{document_id}/content",
+    response_model=PresignedUrlResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_document_content(
+    document_and_session: tuple[Document, SessionDep] = Depends(
+        get_document_for_user_permissions
+    ),
+):
+    document, session = document_and_session
+
+    object_key = f"{document.project_id}/{document.id}"
+    url = create_presigned_url_get_operation(
+        bucket_name=config.s3_bucket_name,
+        object_name=object_key,
+    )
+
+    return PresignedUrlResponse(url=url)
+
+
 # Update document metadata (partial update)
 @router.patch(
     "/projects/{project_id}/documents/{document_id}",
@@ -324,7 +375,7 @@ def get_document(
     status_code=status.HTTP_200_OK,
 )
 def update_document(
-    document_update: Annotated[DocumentRequest, Body()],
+    document_update: Annotated[DocumentBase, Body()],
     document_and_session: tuple[Document, SessionDep] = Depends(
         get_document_for_user_permissions
     ),
@@ -343,6 +394,28 @@ def update_document(
     return document_db
 
 
+# Generate presigned URL to replace document content
+@router.put(
+    "/projects/{project_id}/documents/{document_id}/content",
+    response_model=PresignedUrlResponse,
+    status_code=status.HTTP_200_OK,
+)
+def update_document_content(
+    document_and_session: tuple[Document, SessionDep] = Depends(
+        get_document_for_user_permissions
+    ),
+):
+    document, session = document_and_session
+
+    object_key = f"{document.project_id}/{document.id}"
+    url = create_presigned_url_put_operation(
+        bucket_name=config.s3_bucket_name,
+        object_name=object_key,
+    )
+
+    return PresignedUrlResponse(url=url)
+
+
 # Delete a document
 @router.delete(
     "/projects/{project_id}/documents/{document_id}",
@@ -354,6 +427,9 @@ def delete_document(
     ),
 ):
     document, session = document_and_session
+
+    object_key = f"{document.project_id}/{document.id}"
+    delete_object(config.s3_bucket_name, object_key)
 
     session.delete(document)
     session.commit()

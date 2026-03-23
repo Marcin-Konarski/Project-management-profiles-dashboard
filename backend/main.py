@@ -3,7 +3,7 @@ from fastapi import FastAPI
 
 # from .db.database import init_db
 from .core.config import config
-from .routers import users, projects
+from .routers import users, projects, internal
 
 
 # Init database before the app runs. Only use if Alembic migrations are not used
@@ -18,6 +18,7 @@ app = FastAPI(title=config.app_name)
 
 app.include_router(users.router)
 app.include_router(projects.router)
+app.include_router(internal.router)
 
 
 @app.get("/")
