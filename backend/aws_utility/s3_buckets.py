@@ -1,7 +1,3 @@
-import mimetypes
-from fastapi import status, HTTPException
-from botocore.exceptions import ClientError
-
 from .boto_client import s3_client
 from ..core.config import config
 
@@ -10,12 +6,18 @@ def create_bucket(bucket_name: str):
     s3_client.create_bucket(Bucket=bucket_name)
 
 
-def create_presigned_url_post_operation(bucket_name: str, object_name: str, expiration: int = 600) -> dict:
+def create_presigned_url_post_operation(
+    bucket_name: str, object_name: str, expiration: int = 600
+) -> dict:
     response = s3_client.generate_presigned_post(
         Bucket=bucket_name,
         Key=object_name,
         Conditions=[
-            ["content-length-range", 0, config.max_file_size], # Define range of allowed file sizes
+            [
+                "content-length-range",
+                0,
+                config.max_file_size,
+            ],  # Define range of allowed file sizes
             # {"Content-Type": content_type},
         ],
         ExpiresIn=expiration,
@@ -28,8 +30,8 @@ def create_presigned_url_post_operation(bucket_name: str, object_name: str, expi
 def create_presigned_url_get_operation(bucket_name, object_name, expiration=600):
     """code taken from: https://docs.aws.amazon.com/boto3/latest/guide/s3-examples.html"""
     response = s3_client.generate_presigned_url(
-        'get_object',
-        Params={'Bucket': bucket_name, 'Key': object_name},
+        "get_object",
+        Params={"Bucket": bucket_name, "Key": object_name},
         ExpiresIn=expiration,
     )
 
@@ -37,12 +39,14 @@ def create_presigned_url_get_operation(bucket_name, object_name, expiration=600)
     return response
 
 
-def create_presigned_url_put_operation(bucket_name: str, object_name: str, expiration: int = 600):
+def create_presigned_url_put_operation(
+    bucket_name: str, object_name: str, expiration: int = 600
+):
     response = s3_client.generate_presigned_url(
-        'put_object',
+        "put_object",
         Params={
-            'Bucket': bucket_name,
-            'Key': object_name,
+            "Bucket": bucket_name,
+            "Key": object_name,
         },
         ExpiresIn=expiration,
     )

@@ -18,7 +18,7 @@ from ..schemas.document import (
     DocumentResponse,
     DocumentResponseWithURLs,
     DocumentListResponse,
-    PresignedUrlResponse
+    PresignedUrlResponse,
 )
 from ..schemas.user import MemberResponse
 from ..models import Project, ProjectUser, Document, Role, User, DocumentStatus
@@ -307,9 +307,7 @@ def upload_document(
         )
 
     document_db = Document(
-        name=document.name,
-        project_id=project.id,
-        status=DocumentStatus.PENDING
+        name=document.name, project_id=project.id, status=DocumentStatus.PENDING
     )
 
     session.add(document_db)
@@ -319,7 +317,9 @@ def upload_document(
     session.refresh(document_db)
 
     object_key = f"{project.id}/{document_db.id}"
-    url = create_presigned_url_post_operation(bucket_name=config.s3_bucket_name, object_name=object_key)
+    url = create_presigned_url_post_operation(
+        bucket_name=config.s3_bucket_name, object_name=object_key
+    )
 
     return DocumentResponseWithURLs(
         id=document_db.id,
@@ -414,6 +414,7 @@ def update_document_content(
     )
 
     return PresignedUrlResponse(url=url)
+
 
 # Delete a document
 @router.delete(
