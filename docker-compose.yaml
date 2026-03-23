@@ -35,5 +35,23 @@ services:
       - ./backend:/app/
     restart: unless-stopped
 
+  # Next.js frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: project-frontend
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8080
+    volumes:
+      - ./frontend:/app/
+      - /app/node_modules
+      - /app/.next
+    restart: unless-stopped
+
 volumes:
   projectpgdata:

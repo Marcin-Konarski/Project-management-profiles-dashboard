@@ -56,3 +56,8 @@ variable "backend_replicas" {
   description = "Number of backend container replicas"
   type        = number
 }
+
+variable "cors_origins" {
+  description = "Comma-separated list of allowed CORS origins"
+  type        = string
+}

@@ -18,6 +18,7 @@ class Config(BaseSettings):
     db_password: str
     db_name: str
     s3_bucket_name: str
+    cors_origins: str = ""  # Comma-separated list of allowed origins
     max_file_size: int = 104857600  # 100 MB as MiB
     max_docs: int = 50
     max_projects: int = 10
