@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { signup } from "@/lib/api";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -20,6 +21,7 @@ export default function RegisterPage() {
     setLoading(true);
     try {
       await signup(username, password);
+      toast.success("Account created");
       router.push("/login");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed");

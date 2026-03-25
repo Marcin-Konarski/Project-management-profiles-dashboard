@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { login } from "@/lib/api";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -20,6 +21,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await login(username, password);
+      toast.success("Signed in");
       router.push("/projects");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");

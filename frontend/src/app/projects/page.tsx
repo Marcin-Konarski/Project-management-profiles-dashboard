@@ -3,21 +3,19 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { getProjects, createProject, deleteProject, getMe } from "@/lib/api";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogClose,
+  Dialog,
+  DialogTrigger,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogClose,
 } from "@/components/ui/dialog";
-import {
-  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
-} from "@/components/ui/dropdown-menu";
-import { Plus, FolderOpen, MoreVertical, Trash2, LogOut } from "lucide-react";
-
-interface Project {
-  id: string;
-  name: string;
-  description: string | null;
-}
+import { Plus, FolderOpen, LogOut } from "lucide-react";
+import { ProjectCard, type Project } from "@/components/project-card";
 
 export default function ProjectsPage() {
   const router = useRouter();
@@ -38,28 +36,37 @@ export default function ProjectsPage() {
     }
   }, [router]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     setError("");
     try {
-      await createProject(name, description || undefined);
+      const data = await createProject(name, description || undefined);
+      setProjects((prev) => [
+        ...prev,
+        { id: data.id, name: data.name, description: data.description },
+      ]);
       setName("");
       setDescription("");
       setDialogOpen(false);
-      load();
+      toast.success("Project created");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create project");
     }
   }
 
   async function handleDelete(id: string) {
+    const prev = projects;
+    setProjects(projects.filter((p) => p.id !== id));
     try {
       await deleteProject(id);
-      load();
+      toast.success("Project deleted");
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to delete");
+      setProjects(prev);
+      toast.error(err instanceof Error ? err.message : "Failed to delete");
     }
   }
 
@@ -109,7 +116,9 @@ export default function ProjectsPage() {
                 {error && <p className="text-sm text-destructive">{error}</p>}
                 <div className="flex justify-end gap-2">
                   <DialogClose asChild>
-                    <Button variant="outline" type="button">Cancel</Button>
+                    <Button variant="outline" type="button">
+                      Cancel
+                    </Button>
                   </DialogClose>
                   <Button type="submit">Create</Button>
                 </div>
@@ -127,46 +136,11 @@ export default function ProjectsPage() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {projects.map((project) => (
-              <div
+              <ProjectCard
                 key={project.id}
-                className="group border border-border rounded-lg p-4 hover:bg-muted/50 transition-colors cursor-pointer relative"
-                onClick={() => router.push(`/projects/${project.id}`)}
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <FolderOpen className="h-5 w-5 shrink-0 text-muted-foreground" />
-                    <div className="min-w-0">
-                      <p className="font-medium truncate">{project.name}</p>
-                      {project.description && (
-                        <p className="text-sm text-muted-foreground truncate">{project.description}</p>
-                      )}
-                    </div>
-                  </div>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 opacity-0 group-hover:opacity-100"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <MoreVertical className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem
-                        className="text-destructive"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDelete(project.id);
-                        }}
-                      >
-                        <Trash2 className="h-4 w-4 mr-2" /> Delete
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-              </div>
+                project={project}
+                onDelete={handleDelete}
+              />
             ))}
           </div>
         )}
