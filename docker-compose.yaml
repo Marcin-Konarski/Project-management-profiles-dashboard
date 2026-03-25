@@ -40,7 +40,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: project-frontend
+    container_name: frontend
     # depends_on:
     #   - backend
     ports:
