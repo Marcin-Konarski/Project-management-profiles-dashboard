@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { getProjects, createProject, deleteProject, getMe } from "@/lib/api";
+import { getProjects, createProject, updateProject, deleteProject, getMe } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,6 +25,8 @@ export default function ProjectsPage() {
   const [description, setDescription] = useState("");
   const [error, setError] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [dialogMode, setDialogMode] = useState<"create" | "edit">("create");
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -40,21 +42,45 @@ export default function ProjectsPage() {
     load();
   }, [load]);
 
-  async function handleCreate(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
     try {
-      const data = await createProject(name, description || undefined);
-      setProjects((prev) => [
-        ...prev,
-        { id: data.id, name: data.name, description: data.description },
-      ]);
-      setName("");
-      setDescription("");
+      if (dialogMode === "create") {
+        const data = await createProject(name, description || undefined);
+        setProjects((prev) => [
+          ...prev,
+          { id: data.id, name: data.name, description: data.description },
+        ]);
+        setName("");
+        setDescription("");
+        setDialogOpen(false);
+        toast.success("Project created");
+        return;
+      }
+
+      if (!editingId) throw new Error("No project selected");
+      const data = await updateProject(editingId, {
+        name,
+        description: description.trim() === "" ? null : description,
+      });
+      setProjects((prev) =>
+        prev.map((p) =>
+          p.id === editingId
+            ? { ...p, name: data.name, description: data.description }
+            : p
+        )
+      );
       setDialogOpen(false);
-      toast.success("Project created");
+      toast.success("Project updated");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create project");
+      setError(
+        err instanceof Error
+          ? err.message
+          : dialogMode === "create"
+            ? "Failed to create project"
+            : "Failed to update project"
+      );
     }
   }
 
@@ -75,6 +101,24 @@ export default function ProjectsPage() {
     router.push("/login");
   }
 
+  function openCreateDialog() {
+    setError("");
+    setDialogMode("create");
+    setEditingId(null);
+    setName("");
+    setDescription("");
+    setDialogOpen(true);
+  }
+
+  function openEditDialog(project: Project) {
+    setError("");
+    setDialogMode("edit");
+    setEditingId(project.id);
+    setName(project.name);
+    setDescription(project.description || "");
+    setDialogOpen(true);
+  }
+
   return (
     <div className="min-h-screen">
       <header className="border-b border-border px-4 py-3 flex items-center justify-between">
@@ -92,15 +136,17 @@ export default function ProjectsPage() {
           <h2 className="text-xl font-semibold">Projects</h2>
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
-              <Button size="sm">
+              <Button size="sm" onClick={openCreateDialog}>
                 <Plus className="h-4 w-4" /> New project
               </Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Create project</DialogTitle>
+                <DialogTitle>
+                  {dialogMode === "create" ? "Create project" : "Edit project"}
+                </DialogTitle>
               </DialogHeader>
-              <form onSubmit={handleCreate} className="space-y-4 mt-4">
+              <form onSubmit={handleSubmit} className="space-y-4 mt-4">
                 <Input
                   placeholder="Project name"
                   value={name}
@@ -120,7 +166,9 @@ export default function ProjectsPage() {
                       Cancel
                     </Button>
                   </DialogClose>
-                  <Button type="submit">Create</Button>
+                  <Button type="submit">
+                    {dialogMode === "create" ? "Create" : "Save"}
+                  </Button>
                 </div>
               </form>
             </DialogContent>
@@ -140,6 +188,7 @@ export default function ProjectsPage() {
                 key={project.id}
                 project={project}
                 onDelete={handleDelete}
+                onEdit={openEditDialog}
               />
             ))}
           </div>

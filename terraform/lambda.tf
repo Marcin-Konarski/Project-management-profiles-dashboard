@@ -7,7 +7,7 @@ resource "random_password" "lambda_api_key" {
 }
 
 resource "aws_secretsmanager_secret" "lambda_api_key" {
-  name = "${var.project_name}-lambda-api-key"
+  name = "${var.project_name}-lambda-api-key-1"
 }
 
 resource "aws_secretsmanager_secret_version" "lambda_api_key" {

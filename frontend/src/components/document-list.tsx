@@ -11,6 +11,7 @@ interface DocumentListProps {
   onUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onDownload: (docId: string) => void;
   onDelete: (docId: string) => void;
+  onRename: (docId: string, name: string) => Promise<void> | void;
 }
 
 export function DocumentList({
@@ -19,6 +20,7 @@ export function DocumentList({
   onUpload,
   onDownload,
   onDelete,
+  onRename,
 }: DocumentListProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -60,6 +62,7 @@ export function DocumentList({
               doc={doc}
               onDownload={onDownload}
               onDelete={onDelete}
+              onRename={onRename}
             />
           ))}
         </div>

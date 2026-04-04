@@ -17,6 +17,7 @@ import {
 import {
   FileText,
   MoreVertical,
+  Pencil,
   Trash2,
   Download,
   File,
@@ -24,6 +25,7 @@ import {
   FileVideo,
   FileArchive,
 } from "lucide-react";
+import { DocumentNameDialog } from "@/components/document-name-dialog";
 
 export interface Document {
   id: string;
@@ -35,14 +37,18 @@ export interface Document {
   uploaded_at: string | null;
 }
 
-function fileIcon(name: string) {
-  const ext = name.split(".").pop()?.toLowerCase();
-  if (["jpg", "jpeg", "png", "gif", "svg", "webp"].includes(ext || ""))
-    return FileImage;
-  if (["mp4", "mov", "avi", "webm"].includes(ext || "")) return FileVideo;
-  if (["zip", "rar", "7z", "tar", "gz"].includes(ext || "")) return FileArchive;
-  if (["pdf", "doc", "docx", "txt", "md"].includes(ext || "")) return FileText;
-  return File;
+const imageExts = new Set(["jpg", "jpeg", "png", "gif", "svg", "webp"]);
+const videoExts = new Set(["mp4", "mov", "avi", "webm"]);
+const archiveExts = new Set(["zip", "rar", "7z", "tar", "gz"]);
+const textExts = new Set(["pdf", "doc", "docx", "txt", "md"]);
+
+function renderFileIcon(name: string, className: string) {
+  const ext = name.split(".").pop()?.toLowerCase() || "";
+  if (imageExts.has(ext)) return <FileImage className={className} />;
+  if (videoExts.has(ext)) return <FileVideo className={className} />;
+  if (archiveExts.has(ext)) return <FileArchive className={className} />;
+  if (textExts.has(ext)) return <FileText className={className} />;
+  return <File className={className} />;
 }
 
 function formatSize(bytes: number | null) {
@@ -56,11 +62,18 @@ interface DocumentItemProps {
   doc: Document;
   onDownload: (docId: string) => void;
   onDelete: (docId: string) => void;
+  onRename: (docId: string, name: string) => Promise<void> | void;
 }
 
-export function DocumentItem({ doc, onDownload, onDelete }: DocumentItemProps) {
+export function DocumentItem({
+  doc,
+  onDownload,
+  onDelete,
+  onRename,
+}: DocumentItemProps) {
   const [detailOpen, setDetailOpen] = useState(false);
-  const Icon = fileIcon(doc.name);
+  const [editOpen, setEditOpen] = useState(false);
+  const icon = renderFileIcon(doc.name, "h-5 w-5 shrink-0 text-muted-foreground");
 
   return (
     <>
@@ -68,7 +81,7 @@ export function DocumentItem({ doc, onDownload, onDelete }: DocumentItemProps) {
         className="group flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer"
         onClick={() => setDetailOpen(true)}
       >
-        <Icon className="h-5 w-5 shrink-0 text-muted-foreground" />
+        {icon}
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium truncate">{doc.name}</p>
           <p className="text-xs text-muted-foreground">
@@ -97,6 +110,14 @@ export function DocumentItem({ doc, onDownload, onDelete }: DocumentItemProps) {
               <Download className="h-4 w-4 mr-2" /> Download
             </DropdownMenuItem>
             <DropdownMenuItem
+              onClick={(e) => {
+                e.stopPropagation();
+                setEditOpen(true);
+              }}
+            >
+              <Pencil className="h-4 w-4 mr-2" /> Edit
+            </DropdownMenuItem>
+            <DropdownMenuItem
               className="text-destructive"
               onClick={(e) => {
                 e.stopPropagation();
@@ -108,6 +129,14 @@ export function DocumentItem({ doc, onDownload, onDelete }: DocumentItemProps) {
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+
+      <DocumentNameDialog
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        title="Edit document"
+        initialName={doc.name}
+        onSubmit={(name) => onRename(doc.id, name)}
+      />
 
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
         <DialogContent>

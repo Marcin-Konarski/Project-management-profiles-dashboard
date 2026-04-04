@@ -8,7 +8,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
-import { FolderOpen, MoreVertical, Trash2 } from "lucide-react";
+import { FolderOpen, MoreVertical, Pencil, Trash2 } from "lucide-react";
 
 export interface Project {
   id: string;
@@ -19,9 +19,10 @@ export interface Project {
 interface ProjectCardProps {
   project: Project;
   onDelete: (id: string) => void;
+  onEdit: (project: Project) => void;
 }
 
-export function ProjectCard({ project, onDelete }: ProjectCardProps) {
+export function ProjectCard({ project, onDelete, onEdit }: ProjectCardProps) {
   const router = useRouter();
 
   return (
@@ -53,6 +54,14 @@ export function ProjectCard({ project, onDelete }: ProjectCardProps) {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit(project);
+              }}
+            >
+              <Pencil className="h-4 w-4 mr-2" /> Edit
+            </DropdownMenuItem>
             <DropdownMenuItem
               className="text-destructive"
               onClick={(e) => {

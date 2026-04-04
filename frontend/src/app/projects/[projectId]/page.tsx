@@ -9,6 +9,7 @@ import {
   uploadFileToS3,
   getDocumentContentUrl,
   deleteDocument,
+  updateDocument,
   addMembers,
   removeMember,
 } from "@/lib/api";
@@ -114,6 +115,28 @@ export default function ProjectPage() {
     }
   }
 
+  async function handleRenameDoc(docId: string, name: string) {
+    if (!project) return;
+    const trimmed = name.trim();
+    if (trimmed.length < 3) throw new Error("Name must be at least 3 characters");
+
+    const prevDocs = project.documents;
+    setProject({
+      ...project,
+      documents: project.documents.map((d) =>
+        d.id === docId ? { ...d, name: trimmed } : d
+      ),
+    });
+
+    try {
+      await updateDocument(projectId, docId, trimmed);
+      toast.success("Document updated");
+    } catch (err) {
+      setProject((prev) => (prev ? { ...prev, documents: prevDocs } : prev));
+      throw err;
+    }
+  }
+
   async function handleAddMember(username: string) {
     const updatedMembers = await addMembers(projectId, [username]);
     setProject((prev) =>
@@ -173,6 +196,7 @@ export default function ProjectPage() {
           onUpload={handleUpload}
           onDownload={handleDownload}
           onDelete={handleDeleteDoc}
+          onRename={handleRenameDoc}
         />
       </main>
     </div>

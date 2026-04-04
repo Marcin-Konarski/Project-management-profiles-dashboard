@@ -69,6 +69,16 @@ export async function createProject(name: string, description?: string) {
   });
 }
 
+export async function updateProject(
+  id: string,
+  data: { name?: string; description?: string | null }
+) {
+  return apiFetch(`/projects/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
 export async function deleteProject(id: string) {
   return apiFetch(`/projects/${id}`, { method: "DELETE" });
 }
@@ -88,6 +98,17 @@ export async function getDocumentContentUrl(projectId: string, documentId: strin
 export async function deleteDocument(projectId: string, documentId: string) {
   return apiFetch(`/projects/${projectId}/documents/${documentId}`, {
     method: "DELETE",
+  });
+}
+
+export async function updateDocument(
+  projectId: string,
+  documentId: string,
+  name: string
+) {
+  return apiFetch(`/projects/${projectId}/documents/${documentId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ name }),
   });
 }
 
